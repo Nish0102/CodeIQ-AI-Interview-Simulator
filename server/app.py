@@ -10,7 +10,7 @@ from constants import MAX_FILE_COUNT, MAX_TOTAL_SIZE_BYTES, MAX_FILE_CHARS
 from helpers import validate_file, format_file_contents
 from pattern_detector import detect_skills
 from difficulty_engine import suggest_difficulty
-from question_generator import generate_questions, evaluate_open_ended
+from question_generator import generate_questions, evaluate_open_ended, generate_hint, check_content_safety
 
 app = FastAPI(title="CodeIQ API")
 
@@ -32,6 +32,15 @@ class EvaluateRequest(BaseModel):
     question: str
     ideal_answer: str
     user_answer: str
+
+
+class HintRequest(BaseModel):
+    question: str
+    ideal_answer: str
+
+
+class SafetyRequest(BaseModel):
+    text: str
 
 
 @app.get("/")
@@ -100,3 +109,20 @@ def evaluate_answer(req: EvaluateRequest):
         return evaluate_open_ended(req.question, req.ideal_answer, req.user_answer)
     except Exception as e:
         raise HTTPException(500, f"Evaluation failed: {e}")
+
+
+@app.post("/quiz/hint")
+def get_hint(req: HintRequest):
+    try:
+        hint = generate_hint(req.question, req.ideal_answer)
+        return {"hint": hint}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate hint: {e}")
+
+
+@app.post("/quiz/safety")
+def check_safety(req: SafetyRequest):
+    try:
+        return check_content_safety(req.text)
+    except Exception as e:
+        raise HTTPException(500, f"Safety check failed: {e}")
