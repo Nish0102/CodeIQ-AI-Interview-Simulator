@@ -11,7 +11,7 @@ Copy
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
-> Upload your code files, detect skills automatically, and get quizzed by a local AI — completely free, no API keys needed.
+The system performs AST analysis on uploaded source files to detect programming patterns and skills, then uses a locally hosted LLaMA 3 model via Ollama to generate adaptive multiple-choice, true/false, and open-ended quiz questions.
 
 ---
 
