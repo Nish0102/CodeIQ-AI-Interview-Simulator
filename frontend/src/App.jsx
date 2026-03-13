@@ -34,6 +34,52 @@ function saveHistory(entry) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, 10)));
 }
 
+function exportNotesPDF(notes) {
+  const doc = new jsPDF();
+  const W = doc.internal.pageSize.getWidth();
+  let y = 20;
+
+  const addLine = (text, size=11, color=[60,60,80], bold=false) => {
+    if (y > 270) { doc.addPage(); y = 20; }
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    const lines = doc.splitTextToSize(String(text), W - 30);
+    doc.text(lines, 15, y);
+    y += lines.length * (size * 0.5) + 2;
+  };
+
+  doc.setFillColor(30, 27, 75);
+  doc.rect(0, 0, W, 40, "F");
+  doc.setFontSize(20);
+  doc.setTextColor(165, 180, 252);
+  doc.setFont("helvetica", "bold");
+  doc.text(notes.title || "Study Notes", 15, 25);
+  y = 50;
+
+  notes.sections.forEach((sec, i) => {
+    addLine(sec.heading, 14, [165, 180, 252], true);
+    y += 2;
+    addLine(sec.summary, 11, [180, 180, 200]);
+    y += 3;
+    sec.bullets.forEach(b => addLine(`• ${b}`, 10, [140, 140, 170]));
+    y += 4;
+    if (sec.flashcards?.length) {
+      addLine("Flashcards:", 10, [99, 102, 241], true);
+      sec.flashcards.forEach(fc => {
+        addLine(`Q: ${fc.front}`, 10, [200, 200, 220]);
+        addLine(`A: ${fc.back}`, 10, [140, 180, 140]);
+        y += 2;
+      });
+    }
+    doc.setDrawColor(50, 50, 80);
+    doc.line(15, y, W-15, y);
+    y += 8;
+  });
+
+  doc.save("CodeIQ_Notes.pdf");
+}
+
 function exportPDF(questions, answers, feedback, score, difficulty, skillsDetected) {
   const doc = new jsPDF();
   const W = doc.internal.pageSize.getWidth();
@@ -50,7 +96,6 @@ function exportPDF(questions, answers, feedback, score, difficulty, skillsDetect
     y += lines.length * (size * 0.5) + 2;
   };
 
-  // Header
   doc.setFillColor(30, 27, 75);
   doc.rect(0, 0, W, 40, "F");
   doc.setFontSize(22);
@@ -59,44 +104,31 @@ function exportPDF(questions, answers, feedback, score, difficulty, skillsDetect
   doc.text("CodeIQ Quiz Results", 15, 25);
   y = 50;
 
-  // Summary
   addLine(`Difficulty: ${difficulty}`, 12, [100,100,140], true);
   addLine(`Score: ${score} out of ${questions.length}`, 12, [100,100,140], true);
   addLine(`Skills: ${skillsDetected.join(", ") || "N/A"}`, 11, [120,120,150]);
   addLine(`Date: ${new Date().toLocaleString()}`, 11, [120,120,150]);
   y += 6;
 
-  // Divider
   doc.setDrawColor(99, 102, 241);
   doc.line(15, y, W-15, y);
   y += 10;
 
-  // Questions
   questions.forEach((q, i) => {
     const fb = feedback[i];
     const correct = fb?.correct;
     const userAns = answers[i] || "Not answered";
-
-    // Question header
     doc.setFillColor(correct ? 5 : 28, correct ? 46 : 5, correct ? 22 : 5);
     doc.roundedRect(12, y-4, W-24, 8, 2, 2, "F");
     addLine(`Q${i+1}  ${q.concept ? `[${q.concept}]` : ""}  ${correct ? "✓ CORRECT" : "✗ INCORRECT"}`, 11,
       correct ? [74,222,128] : [248,113,113], true);
-
     addLine(q.question, 11, [220, 220, 240]);
     y += 2;
     addLine(`Your Answer:    ${userAns}`, 10, correct ? [74,222,128] : [248,113,113]);
     addLine(`Correct Answer: ${q.answer}`, 10, [74, 222, 128]);
-
-    if (q.explanation) {
-      addLine(`Explanation: ${q.explanation}`, 10, [150, 150, 180]);
-    }
-    if (fb?.text && q.type === "open_ended") {
-      addLine(`AI Feedback: ${fb.text}`, 10, [150, 150, 180]);
-    }
-    if (fb?.missing && fb.missing !== "Nothing major") {
-      addLine(`Missing: ${fb.missing}`, 10, [252, 165, 165]);
-    }
+    if (q.explanation) addLine(`Explanation: ${q.explanation}`, 10, [150, 150, 180]);
+    if (fb?.text && q.type === "open_ended") addLine(`AI Feedback: ${fb.text}`, 10, [150, 150, 180]);
+    if (fb?.missing && fb.missing !== "Nothing major") addLine(`Missing: ${fb.missing}`, 10, [252, 165, 165]);
     y += 6;
     doc.setDrawColor(50, 50, 80);
     doc.line(15, y, W-15, y);
@@ -141,11 +173,151 @@ function HistoryChart({ history }) {
   );
 }
 
+function Flashcard({ front, back }) {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div onClick={() => setFlipped(f => !f)} style={{cursor:"pointer", perspective:"1000px", height:100, marginBottom:10}}>
+      <div style={{
+        position:"relative", width:"100%", height:"100%",
+        transformStyle:"preserve-3d",
+        transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+        transition:"transform 0.4s ease"
+      }}>
+        {/* Front */}
+        <div style={{
+          position:"absolute", inset:0, backfaceVisibility:"hidden",
+          background:"rgba(99,102,241,0.08)", border:"1px solid rgba(99,102,241,0.2)",
+          borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"center",
+          justifyContent:"center", textAlign:"center"
+        }}>
+          <div>
+            <div style={{fontSize:10,fontFamily:"monospace",color:"#6366f1",marginBottom:6}}>QUESTION — click to reveal</div>
+            <div style={{fontSize:13,color:"#e8e8f0",fontWeight:600}}>{front}</div>
+          </div>
+        </div>
+        {/* Back */}
+        <div style={{
+          position:"absolute", inset:0, backfaceVisibility:"hidden",
+          transform:"rotateY(180deg)",
+          background:"rgba(74,222,128,0.06)", border:"1px solid rgba(74,222,128,0.2)",
+          borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"center",
+          justifyContent:"center", textAlign:"center"
+        }}>
+          <div>
+            <div style={{fontSize:10,fontFamily:"monospace",color:"#4ade80",marginBottom:6}}>ANSWER</div>
+            <div style={{fontSize:13,color:"#e8e8f0"}}>{back}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotesPage({ fileContents, onBack }) {
+  const [notes, setNotes] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [openSection, setOpenSection] = useState(0);
+
+  useEffect(() => {
+    const fetchNotes = async () => {
+      try {
+        const res = await fetch(`${API}/notes/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file_contents: fileContents })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        setNotes(data);
+      } catch(e) {
+        setError("Failed to generate notes: " + e.message);
+      }
+      setLoading(false);
+    };
+    fetchNotes();
+  }, []);
+
+  const S = {
+    card: { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:20, padding:24, marginBottom:12 },
+    sectionBtn: (open) => ({ width:"100%", display:"flex", justifyContent:"space-between", alignItems:"center", background:"none", border:"none", cursor:"pointer", padding:"4px 0", color: open ? "#a5b4fc" : "#e8e8f0", textAlign:"left" }),
+    bullet: { display:"flex", alignItems:"flex-start", gap:8, marginBottom:8, fontSize:13, color:"#c4b5fd", lineHeight:1.5 },
+  };
+
+  if (loading) return (
+    <div style={{...S.card, textAlign:"center", padding:"56px 24px"}}>
+      <div style={{width:44,height:44,border:"3px solid rgba(99,102,241,0.2)",borderTopColor:"#6366f1",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 20px"}}/>
+      <div style={{fontSize:18,fontWeight:700,marginBottom:8}}>Generating study notes…</div>
+      <div style={{fontSize:12,color:"#4b5563",fontFamily:"monospace"}}>Analysing concepts · Building flashcards · Structuring notes</div>
+    </div>
+  );
+
+  if (error) return (
+    <div style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:12,padding:14,color:"#fca5a5",fontSize:13}}>
+      ⚠ {error}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:800,color:"#f0f0fa",margin:0}}>{notes.title}</h2>
+          <div style={{fontSize:12,color:"#6b7280",fontFamily:"monospace",marginTop:4}}>{notes.sections.length} sections · {notes.sections.reduce((a,s)=>a+(s.flashcards?.length||0),0)} flashcards</div>
+        </div>
+        <button onClick={()=>exportNotesPDF(notes)} style={{padding:"9px 18px",borderRadius:10,border:"1px solid rgba(74,222,128,0.3)",background:"rgba(74,222,128,0.08)",color:"#4ade80",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          📄 Export PDF
+        </button>
+      </div>
+
+      {notes.sections.map((sec, i) => (
+        <div key={i} style={S.card}>
+          <button style={S.sectionBtn(openSection===i)} onClick={()=>setOpenSection(openSection===i?-1:i)}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{width:26,height:26,borderRadius:8,background:"rgba(99,102,241,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontFamily:"monospace",color:"#a5b4fc",flexShrink:0}}>{i+1}</span>
+              <span style={{fontSize:15,fontWeight:700}}>{sec.heading}</span>
+            </div>
+            <span style={{fontSize:18,color:"#6b7280"}}>{openSection===i?"▲":"▼"}</span>
+          </button>
+
+          {openSection===i && (
+            <div style={{marginTop:16}}>
+              <p style={{fontSize:13,color:"#9ca3af",lineHeight:1.7,marginBottom:16}}>{sec.summary}</p>
+
+              {sec.bullets?.length > 0 && (
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:10,fontFamily:"monospace",color:"#6366f1",marginBottom:10}}>KEY POINTS</div>
+                  {sec.bullets.map((b,bi) => (
+                    <div key={bi} style={S.bullet}>
+                      <span style={{color:"#6366f1",flexShrink:0,marginTop:2}}>▸</span>
+                      <span>{b}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {sec.flashcards?.length > 0 && (
+                <div>
+                  <div style={{fontSize:10,fontFamily:"monospace",color:"#6366f1",marginBottom:10}}>FLASHCARDS</div>
+                  {sec.flashcards.map((fc,fi) => (
+                    <Flashcard key={fi} front={fc.front} back={fc.back} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [files, setFiles] = useState([]);
   const [difficulty, setDifficulty] = useState("Intermediate");
   const [qCount, setQCount] = useState(5);
   const [phase, setPhase] = useState("setup");
+  const [activeTab, setActiveTab] = useState("quiz");
   const [questions, setQuestions] = useState([]);
   const [fileContents, setFileContents] = useState("");
   const [skillsDetected, setSkillsDetected] = useState([]);
@@ -238,7 +410,7 @@ export default function App() {
       setQuestions(quizData.questions);
       setAnswers({}); setFeedback({}); setScore(0); setCurrent(0);
       setHints({}); setHintUsed({}); setTimings({}); setSafetyWarning("");
-      setReviewMode(false);
+      setReviewMode(false); setActiveTab("quiz");
       setPhase("quiz");
       setTimeout(() => startTimer(), 100);
     } catch(e) {
@@ -269,7 +441,7 @@ export default function App() {
     if (q.type === "open_ended") {
       const safety = await checkSafety(answer);
       if (!safety.safe) {
-        setSafetyWarning(safety.reason || "Your answer violates our community guidelines. Please provide a relevant technical response.");
+        setSafetyWarning(safety.reason || "Your answer violates community guidelines.");
         return;
       }
       setSafetyWarning("");
@@ -286,13 +458,9 @@ export default function App() {
         const data = await res.json();
         if (data.correct) setScore(s => s + 1);
         setFeedback(f => ({ ...f, [idx]: {
-          correct: data.correct,
-          text: data.feedback,
-          missing: data.missing,
-          keywords: data.keywords_matched,
-          keywordScore: data.keyword_score,
-          aiScore: data.ai_score,
-          partialCredit: data.partial_credit,
+          correct: data.correct, text: data.feedback, missing: data.missing,
+          keywords: data.keywords_matched, keywordScore: data.keyword_score,
+          aiScore: data.ai_score, partialCredit: data.partial_credit,
         }}));
       } catch {
         setFeedback(f => ({ ...f, [idx]: { correct: null, text: `Model answer: ${q.answer}` }}));
@@ -306,19 +474,14 @@ export default function App() {
 
   const next = () => {
     setSafetyWarning("");
-    if (current < questions.length - 1) {
-      setCurrent(c => c + 1);
-      startTimer();
-    } else {
-      finishQuiz();
-    }
+    if (current < questions.length - 1) { setCurrent(c => c + 1); startTimer(); }
+    else finishQuiz();
   };
 
   const finishQuiz = () => {
     stopTimer();
     const avgTime = Object.values(timings).length
-      ? Math.round(Object.values(timings).reduce((a,b)=>a+b,0) / Object.values(timings).length)
-      : 0;
+      ? Math.round(Object.values(timings).reduce((a,b)=>a+b,0) / Object.values(timings).length) : 0;
     const entry = { date: new Date().toLocaleString(), score, total: questions.length, difficulty, avgTime, skills: skillsDetected };
     saveHistory(entry);
     setHistory(loadHistory());
@@ -348,21 +511,20 @@ export default function App() {
     setPhase("setup"); setQuestions([]); setAnswers({}); setFeedback({});
     setScore(0); setCurrent(0); setFiles([]); setSkillsDetected([]);
     setHints({}); setHintUsed({}); setTimings({}); setSafetyWarning("");
-    setReviewMode(false); setTimerActive(false);
+    setReviewMode(false); setTimerActive(false); setFileContents("");
   };
 
   const cfg = DIFFICULTY_CONFIG[difficulty];
   const q = questions[current];
   const answeredCount = Object.keys(feedback).length;
   const avgTime = Object.values(timings).length
-    ? Math.round(Object.values(timings).reduce((a,b)=>a+b,0) / Object.values(timings).length)
-    : 0;
+    ? Math.round(Object.values(timings).reduce((a,b)=>a+b,0) / Object.values(timings).length) : 0;
   const timerColor = timeLeft > 30 ? "#4ade80" : timeLeft > 10 ? "#facc15" : "#f87171";
   const timerPct = (timeLeft / TIMER_SECONDS) * 100;
 
   const S = {
     app: { minHeight:"100vh", background:"#080810", color:"#e8e8f0", fontFamily:"'Segoe UI',sans-serif" },
-    container: { maxWidth:720, margin:"0 auto", padding:"40px 24px" },
+    container: { maxWidth:720, width:"100%", margin:"0 auto", padding:"40px 24px", boxSizing:"border-box" },
     badge: { display:"inline-flex", alignItems:"center", gap:8, background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.3)", padding:"6px 16px", borderRadius:100, fontSize:12, fontFamily:"monospace", color:"#a5b4fc", marginBottom:24, letterSpacing:"0.05em" },
     h1: { fontSize:"clamp(28px,4vw,44px)", fontWeight:800, lineHeight:1.05, letterSpacing:"-0.03em", color:"#f0f0fa", marginBottom:14 },
     grad: { background:"linear-gradient(135deg,#818cf8,#c084fc)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" },
@@ -383,7 +545,11 @@ export default function App() {
     skillBadge: { display:"inline-block", padding:"3px 10px", borderRadius:100, fontSize:11, fontFamily:"monospace", background:"rgba(99,102,241,0.15)", border:"1px solid rgba(99,102,241,0.25)", color:"#a5b4fc", margin:"3px" },
     kwBadge: { display:"inline-block", padding:"2px 7px", borderRadius:100, fontSize:11, fontFamily:"monospace", background:"rgba(99,102,241,0.2)", color:"#a5b4fc", margin:"2px" },
     actionBtn: (color) => ({ padding:"11px 20px", borderRadius:12, border:`1px solid ${color}44`, background:`${color}11`, color, fontSize:13, fontWeight:700, cursor:"pointer" }),
+    tab: (active) => ({ padding:"8px 20px", borderRadius:10, border:`1px solid ${active?"rgba(99,102,241,0.5)":"rgba(255,255,255,0.08)"}`, background:active?"rgba(99,102,241,0.15)":"transparent", color:active?"#a5b4fc":"#6b7280", fontSize:13, fontWeight:600, cursor:"pointer", transition:"all 0.2s" }),
   };
+
+  // Tab bar shown during quiz/results
+  const showTabs = (phase === "quiz" || phase === "results") && fileContents;
 
   return (
     <div style={S.app}>
@@ -402,10 +568,25 @@ export default function App() {
           <p style={{color:"#6b7280", fontSize:15, margin:0}}>Upload files · Choose difficulty · Get quizzed by AI</p>
         </div>
 
+        {/* TABS */}
+        {showTabs && (
+          <div style={{display:"flex", gap:8, marginBottom:24}}>
+            <button style={S.tab(activeTab==="quiz")} onClick={()=>setActiveTab("quiz")}>🧠 Quiz</button>
+            <button style={S.tab(activeTab==="notes")} onClick={()=>setActiveTab("notes")}>📒 Study Notes</button>
+          </div>
+        )}
+
+        {/* NOTES TAB */}
+        {showTabs && activeTab === "notes" && (
+          <NotesPage fileContents={fileContents} />
+        )}
+
+        {/* QUIZ TAB or setup/loading */}
+        {(!showTabs || activeTab === "quiz") && <>
+
         {/* ── SETUP ── */}
         {phase === "setup" && <>
           {error && <div style={S.errBox}>⚠ {error}</div>}
-
           <div style={S.card}>
             <div style={S.cardTitle}>— Upload Files</div>
             <div style={S.uploadZone(dragOver)}
@@ -469,9 +650,7 @@ export default function App() {
               <HistoryChart history={history} />
               <div style={{marginTop:12, padding:"10px 14px", borderRadius:10, background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.12)"}}>
                 <div style={{fontSize:11, color:"#6b7280", fontFamily:"monospace", marginBottom:4}}>LAST ATTEMPT</div>
-                <div style={{fontSize:13, color:"#a5b4fc"}}>
-                  {history[0].score}/{history[0].total} correct · {history[0].difficulty} · {history[0].date}
-                </div>
+                <div style={{fontSize:13, color:"#a5b4fc"}}>{history[0].score}/{history[0].total} correct · {history[0].difficulty} · {history[0].date}</div>
               </div>
             </div>
           )}
@@ -509,7 +688,6 @@ export default function App() {
               <span style={{color:"#6b7280", fontFamily:"monospace", fontSize:12}}>
                 {answeredCount > 0 ? `${score}/${answeredCount} correct` : "—"}
               </span>
-              {/* Circular timer */}
               <div style={{position:"relative", width:38, height:38}}>
                 <svg width="38" height="38" style={{transform:"rotate(-90deg)"}}>
                   <circle cx="19" cy="19" r="15" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3"/>
@@ -525,7 +703,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Progress bar */}
           <div style={{height:3, background:"rgba(255,255,255,0.05)", borderRadius:2, marginBottom:20, overflow:"hidden"}}>
             <div style={{height:"100%", background:"linear-gradient(90deg,#6366f1,#8b5cf6)", width:`${((current+1)/questions.length)*100}%`, transition:"width 0.4s"}}/>
           </div>
@@ -552,9 +729,8 @@ export default function App() {
               <div>
                 {q.options.map((opt,i) => {
                   const sel = answers[current] === opt;
-                  const cls = sel ? "selected" : "";
                   return (
-                    <button key={i} style={S.optBtn(cls)} disabled={!!feedback[current]} onClick={()=>!feedback[current]&&submitAnswer(current,opt)}>
+                    <button key={i} style={S.optBtn(sel?"selected":"")} disabled={!!feedback[current]} onClick={()=>!feedback[current]&&submitAnswer(current,opt)}>
                       <span style={{width:26, height:26, borderRadius:7, background:"rgba(255,255,255,0.05)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"monospace", fontSize:11, flexShrink:0}}>
                         {["A","B","C","D","T","F"][i]}
                       </span>
@@ -624,23 +800,19 @@ export default function App() {
                 You answered <strong style={{color:"#a5b4fc"}}>{score} out of {questions.length}</strong> correctly on <strong>{difficulty}</strong>
               </div>
               {avgTime > 0 && (
-                <div style={{color:"#4b5563", fontSize:12, fontFamily:"monospace", marginBottom:16}}>
-                  ⏱ Avg {avgTime}s per question
-                </div>
+                <div style={{color:"#4b5563", fontSize:12, fontFamily:"monospace", marginBottom:16}}>⏱ Avg {avgTime}s per question</div>
               )}
               {skillsDetected.length > 0 && (
-                <div style={{marginBottom:20}}>
-                  {skillsDetected.map(s => <span key={s} style={S.skillBadge}>{s}</span>)}
-                </div>
+                <div style={{marginBottom:20}}>{skillsDetected.map(s => <span key={s} style={S.skillBadge}>{s}</span>)}</div>
               )}
               <div style={{display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap"}}>
                 <button style={S.actionBtn("#a5b4fc")} onClick={()=>setReviewMode(true)}>📋 Review</button>
                 <button style={S.actionBtn("#4ade80")} onClick={()=>exportPDF(questions,answers,feedback,score,difficulty,skillsDetected)}>📄 Export PDF</button>
+                <button style={S.actionBtn("#c084fc")} onClick={()=>setActiveTab("notes")}>📒 Study Notes</button>
                 <button style={S.actionBtn("#a5b4fc")} onClick={restart}>← New Files</button>
                 <button style={S.actionBtn("#a5b4fc")} onClick={generateQuiz}>↺ Retry</button>
               </div>
             </div>
-
             {history.length > 0 && (
               <div style={S.card}>
                 <div style={S.cardTitle}>— Your Progress</div>
@@ -662,10 +834,8 @@ export default function App() {
               const fb = feedback[i];
               const userAns = answers[i] || "Not answered";
               const isCorrect = fb?.correct;
-
               return (
                 <div key={i} style={{...S.card, border:`1px solid ${isCorrect?"rgba(74,222,128,0.2)":"rgba(248,113,113,0.2)"}`, background:isCorrect?"rgba(74,222,128,0.03)":"rgba(248,113,113,0.03)", marginBottom:14}}>
-                  {/* Question header */}
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
                     <div style={{display:"flex", alignItems:"center", gap:8}}>
                       <span style={{fontFamily:"monospace", fontSize:11, color:"#6b7280"}}>Q{i+1}</span>
@@ -679,7 +849,6 @@ export default function App() {
 
                   <div style={{fontSize:15, fontWeight:600, color:"#f0f0fa", marginBottom:14, lineHeight:1.4}}>{q.question}</div>
 
-                  {/* For MCQ/TF show all options with correct/wrong highlighted */}
                   {q.type !== "open_ended" ? (
                     <div style={{marginBottom:12}}>
                       {q.options.map((opt, oi) => {
@@ -711,15 +880,13 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Explanation — shown for ALL question types */}
                   {q.explanation && (
-                    <div style={{padding:10, borderRadius:9, background:"rgba(99,102,241,0.07)", border:"1px solid rgba(99,102,241,0.14)", fontSize:13, color:"#a5b4fc", lineHeight:1.6, marginBottom: fb?.text && q.type==="open_ended" ? 8 : 0}}>
+                    <div style={{padding:10, borderRadius:9, background:"rgba(99,102,241,0.07)", border:"1px solid rgba(99,102,241,0.14)", fontSize:13, color:"#a5b4fc", lineHeight:1.6, marginBottom:fb?.text&&q.type==="open_ended"?8:0}}>
                       <span style={{fontSize:10, fontFamily:"monospace", color:"#6366f1", display:"block", marginBottom:4}}>EXPLANATION</span>
                       {q.explanation}
                     </div>
                   )}
 
-                  {/* AI feedback for open-ended */}
                   {fb?.text && q.type === "open_ended" && (
                     <div style={{padding:10, borderRadius:9, background:"rgba(139,92,246,0.07)", border:"1px solid rgba(139,92,246,0.14)", fontSize:13, color:"#c4b5fd", lineHeight:1.6, marginTop:8}}>
                       <span style={{fontSize:10, fontFamily:"monospace", color:"#8b5cf6", display:"block", marginBottom:4}}>AI FEEDBACK</span>
@@ -747,6 +914,7 @@ export default function App() {
           </div>
         )}
 
+        </>}
       </div>
     </div>
   );
