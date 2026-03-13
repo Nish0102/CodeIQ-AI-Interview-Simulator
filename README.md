@@ -1,7 +1,4 @@
 
-Readme · MD
-Copy
-
 # 🧠 CodeIQ — AI-Powered Code Quiz Generator
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python)
